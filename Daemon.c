@@ -20,34 +20,34 @@
 int flag = 0;
 int flagDie = 0;
 int flagWait = 0;
-sem_t semaphore;//создаем семафор для нескольких потоков
+sem_t semaphore;//create a semaphore for threads
 
-void sigalrm_handler(int signum) { // обработаем сигнал работы демона
+void sigalrm_handler(int signum) { // process the signal
 	flag = 1;
 	return;
 }
 
-void sigterm_handler(int signum) { // обработаем сигнал завершения программы
+void sigterm_handler(int signum) { // process the signal to end the program
 	flagDie = 1;
 	return;
 }
 
-void sigchild_handler(int signum) {// для дочернего процесса
+void sigchild_handler(int signum) {// for child process
 	flagWait = 1;
 	return;
 }
 
 int Daemon(char* filename) {
-	signal(SIGALRM, sigalrm_handler);// сигнал начала работы
-	signal(SIGTERM, sigterm_handler);// сигнал прерывания
-	signal(SIGCHLD, sigchild_handler);// сигнал разблокировки семафора после дочернего процесса
+	signal(SIGALRM, sigalrm_handler);// start signal
+	signal(SIGTERM, sigterm_handler);// interrupt signal
+	signal(SIGCHLD, sigchild_handler);// semaphore unlock signal after child process
 
-	sem_init(&semaphore, 0, 1); // инициализируем семафор
+	sem_init(&semaphore, 0, 1); // initialize the semaphore
 
 	while (1) {
-		pause(); //останавливаем процесс, ожидаем сигнал
-		if (flag == 1) { // выполняем, когда сигнал пойман
-			// считаем команды из файла, разобьем их, и поместим в массив для дальнейшей обработки
+		pause(); //stop the process, wait for a signal
+		if (flag == 1) { // execute when the signal is caught
+			//we read the commands from the file, break them, and put them in an array for further processing
 			char buf[1000] = "";
 			int fd = open(filename, O_CREAT | O_RDWR, S_IRWXU);
 			read(fd, buf, sizeof(buf));
@@ -65,9 +65,9 @@ int Daemon(char* filename) {
 			}
 
 			commands[commands_iter] = NULL;
-			for (int i = 0; i < commands_iter; i++) { // обработка комманд
+			for (int i = 0; i < commands_iter; i++) { // command processing
 				pid_t ppid;
-				if ((ppid = fork()) == 0) { // дочерний процесс исполнит команду и завершится
+				if ((ppid = fork()) == 0) { // the child process will execute the command and end
 
 					int cnt_str = 0;
 					char* pch = strtok(commands[i], " ");
@@ -78,19 +78,19 @@ int Daemon(char* filename) {
 						pch = strtok(NULL, " ");
 					}
 					command[cnt_str] = NULL;
-					int wait = sem_wait(&semaphore);//блокируем семафор
-					if (wait == -1) {// если блокировка произошла с ошибкой
-						char error[100];// массив с ошибками
-						sprintf(error, "%s%d%s", "Команда ", i + 1, " не может выполниться\n");
+					int wait = sem_wait(&semaphore);// block the semaphore
+					if (wait == -1) {// if the lock occurred with an error
+						char error[100];// array with errors
+						sprintf(error, "%s%d%s", "Command ", i + 1, " cannot execute\n");
 					}
 					else {//ошибок не было
 
 						char log_message[100];
-						sprintf(log_message, "%s%d%s", "Выполнена команда ", i + 1, "\n");//сохраним выполненную команду, потом добавим в файл
+						sprintf(log_message, "%s%d%s", "Command completed ", i + 1, "\n");//save the executed command, then add to the file
 
-						int logFile = open("log.txt", O_CREAT | O_RDWR, S_IRWXU); // файл, с выполненными командами
-						lseek(logFile, 0, SEEK_END);//сдвиг в конец файла
-						write(logFile, log_message, strlen(log_message));//пишем команду
+						int logFile = open("log.txt", O_CREAT | O_RDWR, S_IRWXU); // file with executed commands
+						lseek(logFile, 0, SEEK_END);// shift to end of file
+						write(logFile, log_message, strlen(log_message));// write command
 						close(logFile);
 
 						close(1);
@@ -101,7 +101,7 @@ int Daemon(char* filename) {
 
 
 				}
-				else { //родительский процесс
+				else { // parent process
 					while (1) {
 						pause();
 						if (flagWait == 1) {
@@ -115,9 +115,9 @@ int Daemon(char* filename) {
 
 			}
 		}
-		if (flagDie == 1) { // если поймали сигнал завершения процесса
-			sem_destroy(&semaphore);// уничтожаем семафор
-			printf("Демон уничтожен");
+		if (flagDie == 1) { // if caught the signal of completion of the process
+			sem_destroy(&semaphore);// destroy the semaphore
+			printf("Daemon killed");
 			exit(0);
 		}
 	}
@@ -127,14 +127,14 @@ int Daemon(char* filename) {
 int main(int argc, char* argv[])
 {
 	pid_t parpid;
-	if ((parpid = fork()) < 0) // не получается создать дочерний процесс
+	if ((parpid = fork()) < 0) // cannot create child process
 	{
 		printf("\ncan't fork");
-		exit(1); // ошибка
+		exit(1); // error
 	}
-	else if (parpid != 0) { exit(0); } // если родитель, то выходим
+	else if (parpid != 0) { exit(0); } // if parent, then exit
 	char* filename = argv[1];
-	setsid();  // переводим наш дочерний процесс в новую сесию
-	Daemon(filename);  // вызов демона
+	setsid();  // we transfer our child process to a new session
+	Daemon(filename);  // demon call
 	return 0;
 }
